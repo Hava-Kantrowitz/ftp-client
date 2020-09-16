@@ -1,0 +1,113 @@
+#!/usr/bin/env python
+
+import socket
+import argparse 
+import re
+
+def parse_url(url):
+	user = "anonymous"
+	password = ""
+	port = 21
+	host = ""
+	path = "/"
+	info = url.split("//")[1]  
+	personal = info.split("@")[0]
+	server = info.split("@")[1] 
+	if ":" in personal: 
+		user = personal.split(":")[0]
+		password = personal.split(":")[1]
+	elif len(personal) != 0: 
+		user = personal
+	if ":" in server:
+		host = server.split(":")[0]
+		backhalf = server.split(":")[1].split("/")
+		port = backhalf[0]
+		path = path + backhalf[1]
+	else:
+		host = server.split("/")[0]
+		path = path + server.split("/")[1]
+	final_args = [user, password, port, host, path]
+	return final_args 
+
+#This method handles command line parsing and uses it to set the values for the 
+#port, SSL, hostname, and neu_id fields according to specifications
+def init_parsing():
+	parser = argparse.ArgumentParser(description='test')
+	parser.add_argument("operation", help='Operation to execute')
+	parser.add_argument("params",nargs='*',help='parameters for operation')
+	args = parser.parse_args()
+	valid_ops = ["ls", "rm", "rmdir", "mkdir", "cp", "mv"]
+	operation = ""
+	info = []
+	param2 = ""
+	if (len(args.params) is 0): 
+		print("Error, too few parameters")
+		return -1 
+	if args.operation in valid_ops: 
+		operation = args.operation
+		if operation == valid_ops[0] or operation == valid_ops[1] or operation == valid_ops[2] or operation == valid_ops[3]:
+			info = parse_url(args.params[0])
+		else:
+			if len(args.params) < 2:
+				print("Error, too few parameters")
+				return -1 
+			if args.params[0].startswith("ftp://"):
+				info = parse_url(args.params[0])
+				param2 = [args.params[1], "two"]
+			else:
+				info = parse_url(args.params[1])
+				param2 = [args.params[0], "one"]
+	else: 
+		print("Error, not a valid operation.")
+		return -1 
+	params = [operation, info, param2] 
+	return params
+
+def get_data(sock, message): 
+	sock.sendall(message)
+	data = ""
+	while True:
+		result = sock.recv(8192)
+		data = data + result.decode("ascii")
+		if data.endswith("\r\n"):
+			return data
+		else: 
+			continue 
+
+def first_contact(main_params): 
+	user = main_params[0]
+	password = main_params[1]
+	port = main_params[2]
+	host = main_params[3] 
+	path = main_params[4]
+	#print("User: {0}, Password: {1}, Host: {2}, Port: {3}, Path: {4}".format(user, password, host, port, path))
+	sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	sock.connect((host, port))
+	message1 = "USER " + user + "\r\n"
+	response = get_data(sock, message1)
+	print(response)
+	if len(password) > 0 and re.search('3??', response): 
+		message2 = "PASS " + password + "\r\n"
+		response = get_data(sock, message2)
+		print(response)
+	if re.search('2??', response): 
+		message3 = "TYPE I\r\n"
+		response1 = get_data(sock, message3)
+		print(response1) 
+		message4 = "MODE S\r\n"
+		response2 = get_data(sock, message4)
+		print(response2)
+		message5 = "STRU F\r\n"
+		response3 = get_data(sock, message5)
+		print(response3)
+	return sock 
+	 
+
+def main():
+	params = init_parsing()
+	op = params[0]
+	main_params = params[1]
+	sock = first_contact(main_params)
+	extra_param = params[2]
+
+main()
