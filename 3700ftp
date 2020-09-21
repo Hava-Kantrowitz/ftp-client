@@ -3,6 +3,7 @@
 import socket
 import argparse 
 import re
+import time 
 
 def parse_url(url):
 	user = "anonymous"
@@ -22,11 +23,18 @@ def parse_url(url):
 		host = server.split(":")[0]
 		backhalf = server.split(":")[1].split("/")
 		port = backhalf[0]
-		path = path + backhalf[1]
+		del backhalf[0]
+		for val in backhalf:
+			path = path + val + "/"
 	else:
-		host = server.split("/")[0]
-		path = path + server.split("/")[1]
-	final_args = [user, password, port, host, path]
+		server_list = server.split("/")
+		host = server_list[0]
+		del server_list[0]
+		for val in server_list: 
+			path = path + val + "/" 
+	if "//" == path: 
+		path = "/" 
+	final_args = [user, password, port, host, path] 
 	return final_args 
 
 #This method handles command line parsing and uses it to set the values for the 
@@ -64,7 +72,9 @@ def init_parsing():
 	return params
 
 def get_data(sock, message): 
+	#print("in data, message is {0}".format(message)) 
 	sock.sendall(message)
+	time.sleep(0.3) 
 	data = ""
 	while True:
 		result = sock.recv(8192)
@@ -73,6 +83,17 @@ def get_data(sock, message):
 			return data
 		else: 
 			continue 
+
+def read_data(sock):
+	time.sleep(0.3)
+	data = ""
+	while True: 
+		result = sock.recv(8192)
+		data = data + result.decode("ascii") 
+		if data.endswith("\r\n"):
+			return data 
+		else:
+			continue
 
 def first_contact(main_params): 
 	user = main_params[0]
@@ -103,11 +124,43 @@ def first_contact(main_params):
 	return sock 
 	 
 
+def run_command(op, main_params, sock):
+	path = main_params[4]
+	#print("Op: {0}, Path: {1}".format(op, path))
+	message = ""
+	hasData = True
+	if (op == "mkdir"): 
+		hasData = False
+		message = "MKD " + path + "\r\n"
+	elif (op == "rm"): 
+		hasData = False
+		message = "RMD " + path + "\r\n"
+	else: 
+		data_msg = "PASV\r\n"
+		data_resp = get_data(sock, data_msg) 
+		print(data_resp) 
+		data_resp = data_resp.split("(")[1].split(")")[0].split(",")
+		ip = "{0}.{1}.{2}.{3}".format(data_resp[0], data_resp[1], data_resp[2], data_resp[3])
+		port = (int(data_resp[4]) << 8) + int(data_resp[5])  
+		data_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		data_sock.connect((ip, port))
+		if (op == "ls"): 
+			message = "LIST " + path + "\r\n"
+	response = get_data(sock, message)
+	print(response)
+	if hasData: 
+		data = read_data(data_sock)
+		print(data) 
+	bye = "QUIT\r\n"
+	response = get_data(sock, bye) 
+	print(response)  
+
 def main():
 	params = init_parsing()
 	op = params[0]
 	main_params = params[1]
 	sock = first_contact(main_params)
 	extra_param = params[2]
+	run_command(op, main_params, sock)
 
 main()
