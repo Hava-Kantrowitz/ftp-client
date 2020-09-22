@@ -4,6 +4,7 @@ import socket
 import argparse 
 import re
 import time 
+import os
 
 def parse_url(url):
 	user = "anonymous"
@@ -90,7 +91,7 @@ def read_data(sock):
 	while True: 
 		result = sock.recv(8192)
 		data = data + result.decode("ascii") 
-		if data.endswith("\r\n"):
+		if data.endswith(""):
 			return data 
 		else:
 			continue
@@ -124,17 +125,22 @@ def first_contact(main_params):
 	return sock 
 	 
 
-def run_command(op, main_params, sock):
+def run_command(op, main_params, sock, filename):
 	path = main_params[4]
+	path = path[:-1]
 	#print("Op: {0}, Path: {1}".format(op, path))
-	message = ""
-	hasData = True
 	if (op == "mkdir"): 
-		hasData = False
 		message = "MKD " + path + "\r\n"
-	elif (op == "rm"): 
-		hasData = False
+		response = get_data(sock, message)
+		print(response)
+		quit(sock)
+	elif (op == "rmdir"): 
 		message = "RMD " + path + "\r\n"
+		response = get_data(sock, message)
+		print(response)
+		quit(sock)
+	elif (op == "rm"):
+		delete(path, sock) 
 	else: 
 		data_msg = "PASV\r\n"
 		data_resp = get_data(sock, data_msg) 
@@ -146,14 +152,60 @@ def run_command(op, main_params, sock):
 		data_sock.connect((ip, port))
 		if (op == "ls"): 
 			message = "LIST " + path + "\r\n"
+			response = get_data(sock, message)
+			print(response)
+			data = read_data(data_sock)
+			print(data)
+			data_sock.close() 
+			quit(sock) 
+		elif (op == "cp1"):
+			toServer(path, data_sock, sock, filename) 
+		elif (op == "cp2"): 
+			fromServer(path, data_sock, sock, filename)
+			quit(sock)
+		elif (op == "mv1"):
+			toServer(path, data_sock, sock, filename)
+			command = "rm {0}".format(filename)
+			os.system(command)
+		elif (op == "mv2"):
+			fromServer(path, data_sock, sock, filename)
+			delete(path, sock)
+
+def delete(path, sock):
+	message = "DELE " + path + "\r\n"
 	response = get_data(sock, message)
 	print(response)
-	if hasData: 
-		data = read_data(data_sock)
-		print(data) 
+	quit(sock)
+
+def toServer(path, data_sock, sock, filename): 
+	#path = path[:-1] 
+	message = "STOR " + path + "\r\n"
+	readFile = open(filename)
+	readData = ""
+	for line in readFile: 
+		readData = readData + line
+	readFile.close()
+	response = get_data(sock, message)
+	print(response) 
+	data_sock.sendall(readData)
+	data_sock.close() 
+	quit(sock) 
+
+def fromServer(path, data_sock, sock, filename):
+	path = path[1:]
+	message = "RETR " + path + "\r\n"
+	response = get_data(sock, message) 
+	print(response) 
+	data = read_data(data_sock)
+	aFile = open(filename, "w+")
+	aFile.write(data)
+	aFile.close()
+	
+def quit(sock):	
 	bye = "QUIT\r\n"
 	response = get_data(sock, bye) 
-	print(response)  
+	print(response) 
+	sock.close() 
 
 def main():
 	params = init_parsing()
@@ -161,6 +213,14 @@ def main():
 	main_params = params[1]
 	sock = first_contact(main_params)
 	extra_param = params[2]
-	run_command(op, main_params, sock)
+	file_name = ""
+	if len(extra_param) == 2:
+		file_name = extra_param[0]
+		file_position = extra_param[1]
+		if file_position is "one":
+			op = op + "1"
+		else:
+			op = op + "2"
+	run_command(op, main_params, sock, file_name)
 
 main()
